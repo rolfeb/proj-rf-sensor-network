@@ -1,0 +1,35 @@
+0. Config
+
+    sensor-cfg.py   -> /home/pi/sensor-cfg.py       [EDIT as required]
+
+1. Data logging
+
+2. Web access
+
+    chart.py        -> /usr/lib/cgi-bin/chart.py
+    sensors.cgi     -> /usr/lib/cgi-bin/sensors.cgi
+
+    sensors.css     -> /var/www/sensors/sensors.css
+
+
+
+
+
+g.pyc
+g.sh
+inside.html
+p21.xml
+regen-charts.py
+sensors.cgi
+sensors.css
+sensors.py
+sensors.pyc
+stn_21_pres.rrd
+stn_21_temp.rrd
+stn_2_temp.rrd
+stn_3_temp.rrd
+stn_4_temp.rrd
+t2.xml
+t21.xml
+t3.xml
+t4.xml

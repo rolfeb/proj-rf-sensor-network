@@ -1,0 +1,98 @@
+h1
+{
+    margin-top: 40px;
+}
+
+div#current1
+{
+    padding: 20px;
+    background: #dde;
+    float: left;
+}
+
+div#current2
+{
+    background: #dde;
+    float: left;
+    border-left: 2px solid #cce;
+    border-top: 2px solid #cce;
+    border-right: 2px solid #eef;
+    border-bottom: 2px solid #eef;
+
+}
+
+div#current2 table
+{
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 2.0em;
+    width: 100%;
+}
+
+div#current2 table th
+{
+    text-decoration: underline;
+}
+
+div#current2 table th.id, div#current2 table td.id
+{
+    width: 5%;
+    text-align: center;
+}
+
+div#current2 table th.station, div#current2 table td.station
+{
+    width: 50%;
+    text-align: left
+    white-space: nowrap;
+}
+
+div#current2 table th.temp, div#current2 table td.temp
+{
+    width: 15%;
+    text-align: right;
+}
+
+div#current2 table th.pressure, div#current2 table td.pressure
+{
+    width: 15%;
+    text-align: right;
+}
+
+div#current2 table th.status, div#current2 table td.status
+{
+    width: 15%;
+    text-align: right;
+}
+
+div#current3
+{
+    padding: 20px;
+    background: #dde;
+    float: center;
+}
+
+div#current4
+{
+    padding: 20px;
+    background: #dde;
+    float: center;
+}
+
+
+div.graph
+{
+    margin: 5px;
+    float: left;
+    background: #e0f0ff;
+    border-left: #def;
+    border-top: #def;
+    border-right: #cde;
+    border-bottom: #cde;
+    border-width: 3px;
+    border-style: solid;
+}
+
+div.graph img
+{
+    margin: 0px;
+}
