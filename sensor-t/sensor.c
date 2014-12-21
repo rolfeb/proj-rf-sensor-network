@@ -17,13 +17,17 @@
 
 #include "one-wire.h"
 #include "ds1820.h"
-#include "wireless.h"
+#include "../include/wireless.h"
 
 #define MSG_SIZE_DS1820     (WL_SENSOR_MSG_HDR_LEN + 2*WL_SENSOR_MSG_VALUE_LEN)
 
 #define PIN_TX      PB1
 #define PIN_SENSOR  PB2
 
+/*
+ * Wait 210us. Don't do it on one call as there are frequency-dependent
+ * limitations on the max delay.
+ */
 static void inline
 state_delay(void)
 {
@@ -34,6 +38,11 @@ state_delay(void)
     _delay_us(10);
 }
 
+/*
+ * Send one bit using Machester encoding:
+ *  0 = 0 -> 1
+ *  1 = 1 -> 0
+ */
 static void
 send_bit(uint8_t v)
 {
@@ -55,6 +64,9 @@ send_bit(uint8_t v)
     }
 }
 
+/*
+ * Transmit one byte of data
+ */
 static void
 send_byte(uint8_t v)
 {
@@ -65,6 +77,9 @@ send_byte(uint8_t v)
     }
 }
 
+/*
+ * Send the preamble pattern
+ */
 static void
 send_preamble(void)
 {
@@ -75,6 +90,15 @@ send_preamble(void)
     send_bit(1);
 }
 
+/*
+ * Transmit a message to the receiver.  A message consists of:
+ * 
+ *  - preamble to allow the receiver to lock on to the signal
+ *  - sync byte marking the start of the message
+ *  - message length
+ *  - message data
+ *  - a CRC of (message length + data)
+ */
 static void
 tx_message(char *text, uint8_t len)
 {
@@ -111,7 +135,7 @@ static volatile int16_t msg_counter;
 static uint8_t          station_id;
 
 /*
- * Take a temperature measurement and and transmit it
+ * Take a temperature measurement and and transmit it to the receiver.
  */
 static void
 send_measurement(void)
@@ -119,9 +143,18 @@ send_measurement(void)
     uint8_t temp, fract;
     int16_t t;
 
+    /*
+     * Retrieve the temperature from the sensor
+     */
     ds1820_get_temperature(&temp, &fract);
     t = temp * 10 + fract * 5;
 
+    /*
+     * Construct a message. The message contains:
+     *  - the ID of this transmitter
+     *  - the temperature measurement
+     *  - the message sequence number
+     */
     char msg[MSG_SIZE_DS1820];
 
     WL_SENSOR_MSG_STATION_ID(msg) = station_id;
@@ -138,7 +171,8 @@ send_measurement(void)
 }
 
 /*
- * Watchdog interrupt handler, called every 8 seconds
+ * Watchdog interrupt handler, called every 8 seconds. Every 8th time this is
+ * called (i.e. every 64 seconds) transmit a temperature measurement.
  */
 ISR(WDT_vect)
 {
@@ -151,6 +185,10 @@ ISR(WDT_vect)
     sbi(WDTCR, WDIE);
 }
 
+/*
+ * Save the state of MCUSR (so we know if we had a reset), and disable the
+ * watchdog timer. This is called before main().
+ */
 static uint8_t mcusr_saved \
     __attribute__ ((section (".noinit")));
 
@@ -159,10 +197,6 @@ watchdog_init(void) \
     __attribute__((naked)) \
     __attribute__((section(".init3")));
 
-/*
- * Save the state of MCUSR (so we know if we had a reset), and disable the
- * watchdog timer. This is called before main().
- */
 void watchdog_init(void)
 {
     mcusr_saved = MCUSR;
@@ -173,6 +207,9 @@ void watchdog_init(void)
 int
 main(void)
 {
+    /*
+     * Setup the GPIO pin connected to the RF transmitter
+     */
     sbi(DDRB, PIN_TX);
     cbi(PORTB, PIN_TX);
 
@@ -182,15 +219,20 @@ main(void)
     station_id = eeprom_read_byte(0x00);
 
     /*
-     * Initialise 1-wire connection to the DS1820
+     * Set up the 1-wire protocol connection to the DS1820
      */
     onewire_init(&DDRB, &PORTB, &PINB, PIN_SENSOR);
 
+    /*
+     * Turn off unnecessary features to save power
+     */
     power_adc_disable();
     power_usi_disable();
 
     /*
-     * Set the watchdog timer to generate an interrupt after 8s
+     * Set the watchdog timer to generate an interrupt after 8s. Bascially
+     * we spend most of our time in hibernation, using the watchdog timer
+     * to wake up.
      */
     wdt_enable(WDTO_8S);
     sbi(WDTCR, WDIE);
@@ -198,7 +240,7 @@ main(void)
     sei();
 
     /*
-     * Set sleep modes for low power consumption
+     * Set sleep modes for low power consumption.
      */
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     sleep_enable();

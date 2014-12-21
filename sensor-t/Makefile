@@ -12,7 +12,7 @@ MCU             =       attiny25
 #
 # 3.6864 MHz clock
 #
-# LFUSE = 0xfb
+# LFUSE = 0xed:
 #	CKDIV8		1	no divide by 8
 #	CKOUT		1	clock output off
 #	SUT1:0		10	xtal osc, fast rising power
@@ -35,6 +35,7 @@ MODULES         =	\
 #
 CFILES		=	\
 			sensor.c
+
 #
 # Load standard rules
 #

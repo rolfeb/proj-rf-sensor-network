@@ -14,7 +14,7 @@
 
 #include "avr-common.h"
 
-#include "wireless.h"
+#include "../include/wireless.h"
 #include "common.h"
 
 

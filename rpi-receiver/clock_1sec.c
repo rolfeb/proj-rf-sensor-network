@@ -15,7 +15,6 @@
  * The maximum we can count up to is 1024 * 256 (prescaler + max count),
  * so we need to increment the seconds counter every 38 interrupts.
  */
-
 static volatile clock_time_t    clock_1sec;
 static volatile uint8_t         clock_tick_ctr;
 
@@ -76,7 +75,7 @@ clock_time_t clock_time(void)
 }
 
 /*
- * Get the current clock value, but don't lock. Used it we know interrupts are
+ * Get the current clock value, but don't lock. Used if we know interrupts are
  * disabled.
  */
 clock_time_t clock_time_unlocked(void)

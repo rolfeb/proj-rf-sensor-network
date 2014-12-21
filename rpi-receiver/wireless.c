@@ -6,7 +6,7 @@
 #include MCU_H
 
 #include "avr-common.h"
-#include "wireless.h"
+#include "../include/wireless.h"
 
 static volatile uint8_t *rx_ddr;
 static volatile uint8_t *rx_porto;
@@ -57,13 +57,30 @@ static inline void push_msg_byte(uint8_t v)
         *++msg_wrptr= v;
 }
 
+/*
+ * The last 16 sampled bits from the radio receiver
+ */
 static volatile uint16_t    sample_bits;
+
+/*
+ * The receiver FSM state
+ */
 static volatile state_t     state           = UNSYNC;
+
+/*
+ * A counter that tells us how many samples until we should look for
+ * the next bit transition.
+ */
 static volatile uint8_t     sample_ctr;
 
 static volatile uint8_t     current_byte;
 static volatile uint8_t     bit_ctr;
 
+/*
+ * This interrupt handler is called at 16 times the rf signal clock rate
+ * so that we can recover the transmission clock from the Manchester-coded
+ * data.
+ */
 ISR(TIMER1_COMPA_vect)
 {
     // sbi(PORTA, PA7);    // DEBUG: enter interrupt handler
@@ -90,13 +107,15 @@ ISR(TIMER1_COMPA_vect)
         /*
          * The initial sync matches a set of 16 bits with a 0->1 (manchester 0)
          * bit in the middle.
+         *
+         * Here we compare the 10 bits in the middle of the 16-bit sample to
+         * see if we have a 0->1 transition. If so, we move to the SYNCING
+         * state.
          */
         if ((sample_bits & 0x1ff8) == 0x00f8)
-        // if ((sample_bits & 0x3ffc) == 0x00fc)
-        // if (sample_bits == 0x00ff)
         {
             state = SYNCING;
-            // PORTA = (PORTA & 0xf8) | (state & 0x7);
+            // PORTA = (PORTA & 0xf8) | (state & 0x7);  // DEBUG
             sample_ctr = 16;
         }
     }
@@ -158,7 +177,6 @@ ISR(TIMER1_COMPA_vect)
 
             if (state == SYNCING)
             {
-
                 /*
                  * Accumulate the newly-sampled bit into the current byte
                  * (at the MSB end).
@@ -166,7 +184,8 @@ ISR(TIMER1_COMPA_vect)
                 current_byte = (current_byte >> 1) | (m == 2 ? (1 << 7) : 0);
 
                 /*
-                 * We end the sync stream of zeroes with 2 1-bits.
+                 * The sync stream of zeroes ends with 2 1-bits.  If we get
+                 * this, then move to the SYNCED state.
                  */
                 if (current_byte == 0xc0)
                 {
@@ -242,12 +261,20 @@ ISR(TIMER1_COMPA_vect)
                          */
                         if (msg_crc == current_byte)
                         {
-                            // CRC check succeeded
+                            /*
+                             * The CRC check succeeded, so we have successfully
+                             * received a message.
+                             */
                             *msg_wrptr++ = '\0';
                             msg_pending = 1;
                         }
                         else
+                        {
+                            /*
+                             * The CRC check failed; the message was corrupt
+                             */
                             msg_error = 1;
+                        }
 
                         /*
                          * Reset back to the UNSYNC state.
