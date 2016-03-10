@@ -40,3 +40,6 @@ CFILES		=	\
 # Load standard rules
 #
 include $(AVR_ROOT)/build/avr-build.mk
+
+AVRDUDE = $(AVRDUDE_JTAGISP)
+

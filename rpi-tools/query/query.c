@@ -17,7 +17,7 @@
 #define I2C_DEVICE          "/dev/i2c-0"
 #define I2C_SLAVE_ADDR      0x41
 
-#define N_SENSOR_TYPES      5
+#define N_SENSOR_TYPES      6
 
 struct sensor_t
 {
@@ -70,9 +70,10 @@ write_as_csv(char *message, int bytes_read)
 
         for (j = 0; j < N_SENSOR_TYPES; j++)
         {
+            if (j > 0)
+                printf(",");
             if (sensors[j].valid)
                 printf("%d", sensors[j].value);
-            printf(",");
         }
 
         printf("\n");

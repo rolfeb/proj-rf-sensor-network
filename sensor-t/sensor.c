@@ -9,6 +9,7 @@
 #include <avr/power.h>
 #include <avr/wdt.h>
 #include <avr/sleep.h>
+#include <avr/pgmspace.h>
 #include <util/delay.h>
 #include <util/crc16.h>
 #include MCU_H
@@ -19,10 +20,21 @@
 #include "ds1820.h"
 #include "../include/wireless.h"
 
-#define MSG_SIZE_DS1820     (WL_SENSOR_MSG_HDR_LEN + 2*WL_SENSOR_MSG_VALUE_LEN)
+#define MSG_SIZE_DS1820     (WL_SENSOR_MSG_HDR_LEN + 3*WL_SENSOR_MSG_VALUE_LEN)
 
 #define PIN_TX      PB1
 #define PIN_SENSOR  PB2
+
+static volatile int16_t intr_counter;
+static volatile int16_t msg_counter;
+static volatile uint8_t batt_counter;
+static uint8_t          station_id;
+
+/*
+ * Lookup table to convert from ADC readings to battery voltage.
+ * First entry is 3.4V, thereafter descending by 0.1V for each step.
+ */
+static const uint16_t   adc_lut[]   PROGMEM = {341, 351, 363, 375, 388, 401, 416, 432, 450, 468, 489, 511, 535, 562, 592, 625, 661, 703, 750, 803, 865, 937, 1023};
 
 /*
  * Wait 210us. Don't do it on one call as there are frequency-dependent
@@ -130,10 +142,6 @@ tx_message(char *text, uint8_t len)
     cbi(PORTB, PIN_TX);
 }
 
-static volatile int16_t intr_counter;
-static volatile int16_t msg_counter;
-static uint8_t          station_id;
-
 /*
  * Take a temperature measurement and and transmit it to the receiver.
  */
@@ -142,12 +150,56 @@ send_measurement(void)
 {
     uint8_t temp, fract;
     int16_t t;
+    int16_t adc;
+    int     i;
+    int16_t battery             = 0;
+    uint8_t do_battery_check    = 0;
+    char    msg[MSG_SIZE_DS1820];
+
+    /*
+     * Kick off an ADC conversion to check the battery (every N minutes)
+     */
+    if (batt_counter++ > 60)
+    {
+        power_adc_enable();
+        sbi(ADCSRA, ADSC);
+
+        batt_counter = 0;
+        do_battery_check = 1;
+    }
 
     /*
      * Retrieve the temperature from the sensor
      */
     ds1820_get_temperature(&temp, &fract);
-    t = temp * 10 + fract * 5;
+    t = (temp << 3) + (temp << 1) + (fract << 2) + fract;
+
+    if (do_battery_check)
+    {
+        /*
+         * Wait for the ADC conversion to complete
+         */
+        while ((ADCSRA & (1<<ADSC)) != 0)
+            continue;
+
+        adc = ADCL;
+        adc += (ADCH & 0x3) << 8;
+
+        /*
+         * Vbg / Vcc = adc / 1023
+         * => Vcc = Vbg * 1023 / adc
+         */
+        battery = 34;
+        for (i = 0; i < sizeof(adc_lut); i++)
+        {
+            uint16_t   threshold    = pgm_read_dword(&adc_lut[i]);
+
+            if (threshold >= adc)
+                break;
+
+            --battery;
+        }
+    }
 
     /*
      * Construct a message. The message contains:
@@ -155,14 +207,19 @@ send_measurement(void)
      *  - the temperature measurement
      *  - the message sequence number
      */
-    char msg[MSG_SIZE_DS1820];
-
     WL_SENSOR_MSG_STATION_ID(msg) = station_id;
-    WL_SENSOR_MSG_NUM_VALUES(msg) = 2;
     WL_SENSOR_MSG_TYPE(msg, 0)  = WL_SENSOR_TYPE_TEMPERATURE;
     WL_SENSOR_MSG_VALUE(msg, 0) = t;
     WL_SENSOR_MSG_TYPE(msg, 1)  = WL_SENSOR_TYPE_COUNTER;
     WL_SENSOR_MSG_VALUE(msg, 1) = msg_counter;
+    if (do_battery_check)
+    {
+        WL_SENSOR_MSG_TYPE(msg, 2)  = WL_SENSOR_TYPE_BATTERY;
+        WL_SENSOR_MSG_VALUE(msg, 2) = battery;
+        WL_SENSOR_MSG_NUM_VALUES(msg) = 3;
+    }
+    else
+        WL_SENSOR_MSG_NUM_VALUES(msg) = 2;
 
     tx_message(msg, MSG_SIZE_DS1820);
 
@@ -222,6 +279,18 @@ main(void)
      * Set up the 1-wire protocol connection to the DS1820
      */
     onewire_init(&DDRB, &PORTB, &PINB, PIN_SENSOR);
+
+    /*
+     * Set up the ADC
+     *
+     * ADMUX.REFS[2:0] = 000    => reference is Vcc
+     * ADMUX.MUX[3:0] = 1100    => input is Vbg (1.1v)
+     * ADCSRA.ADEN = 1          => enable ADC
+     */
+    sbi(ADMUX, MUX3);
+    sbi(ADMUX, MUX2);
+    sbi(ADCSRA, ADEN);
+    sbi(ADCSRA, ADSC);  // start 1st conversion
 
     /*
      * Turn off unnecessary features to save power
