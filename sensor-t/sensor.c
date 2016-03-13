@@ -20,14 +20,45 @@
 #include "ds1820.h"
 #include "../include/wireless.h"
 
+/**
+ * The size of a message for a DS1820-based sensor.
+ */
 #define MSG_SIZE_DS1820     (WL_SENSOR_MSG_HDR_LEN + 3*WL_SENSOR_MSG_VALUE_LEN)
 
 #define PIN_TX      PB1
 #define PIN_SENSOR  PB2
 
+/**
+ * The number of watchdog interrupts (every 8 seconds) before we should
+ * take a new reading and send a message. Currently gives us 64s cycles.
+ */
+#define WATCHDOG_INTR_THRESOLD      8
+
+/**
+ * The number of message we send before we should include a battery check.
+ */
+#define BATTERY_CHECK_THRESHOLD     60
+
+/**
+ * A counter of the number of watchdog interrupts we have received.
+ */
 static volatile int16_t intr_counter;
+
+/**
+ * A counter that is incremented for each message. This is used by the
+ * receiver to determine if our state has changed.
+ */
 static volatile int16_t msg_counter;
+
+/**
+ * A counter of the number of messages we have sent. Used to decide when to
+ * perform a voltage measurement.
+ */
 static volatile uint8_t batt_counter;
+
+/**
+ * Our station ID; retrieved from EEPROM.
+ */
 static uint8_t          station_id;
 
 /*
@@ -36,8 +67,10 @@ static uint8_t          station_id;
  */
 static const uint16_t   adc_lut[]   PROGMEM = {341, 351, 363, 375, 388, 401, 416, 432, 450, 468, 489, 511, 535, 562, 592, 625, 661, 703, 750, 803, 865, 937, 1023};
 
-/*
- * Wait 210us. Don't do it on one call as there are frequency-dependent
+/**
+ * Delay 210us.
+ *
+ * Don't do it on one call as there are frequency-dependent
  * limitations on the max delay.
  */
 static void inline
@@ -50,15 +83,18 @@ state_delay(void)
     _delay_us(10);
 }
 
-/*
- * Send one bit using Machester encoding:
+/**
+ * Send one bit using Machester encoding.
+ *
  *  0 = 0 -> 1
  *  1 = 1 -> 0
+ *
+ *  @param[in]  bit     The bit value to transmit.
  */
 static void
-send_bit(uint8_t v)
+send_bit(uint8_t bit)
 {
-    if (v)
+    if (bit)
     {
         sbi(PORTB, PIN_TX);
         state_delay();
@@ -76,21 +112,23 @@ send_bit(uint8_t v)
     }
 }
 
-/*
- * Transmit one byte of data
+/**
+ * Transmit one byte of data.
+ *
+ *  @param[in]  byte   The byte value to transmit.
  */
 static void
-send_byte(uint8_t v)
+send_byte(uint8_t byte)
 {
     for (uint8_t i = 0; i < 8; i++)
     {
-        send_bit(v & 0x01);
-        v >>= 1;
+        send_bit(byte & 0x01);
+        byte >>= 1;
     }
 }
 
-/*
- * Send the preamble pattern
+/**
+ * Transmit the preamble bit pattern.
  */
 static void
 send_preamble(void)
@@ -102,17 +140,21 @@ send_preamble(void)
     send_bit(1);
 }
 
-/*
- * Transmit a message to the receiver.  A message consists of:
- * 
+/**
+ * Transmit a message to the receiver.
+ *
+ * A message consists of:
  *  - preamble to allow the receiver to lock on to the signal
  *  - sync byte marking the start of the message
  *  - message length
  *  - message data
  *  - a CRC of (message length + data)
+ *
+ *  @param[in]  data    The data to transmit.
+ *  @param[in]  length  The length of the message payload.
  */
 static void
-tx_message(char *text, uint8_t len)
+tx_message(const char *data, uint8_t length)
 {
     uint8_t     crc = 0;
 
@@ -125,14 +167,14 @@ tx_message(char *text, uint8_t len)
     send_byte(0xc4);
 
     // send msg size
-    send_byte(len);
-    crc = _crc_ibutton_update(crc, len);
+    send_byte(length);
+    crc = _crc_ibutton_update(crc, length);
 
     // send msg
-    for (uint8_t i = 0; i < len; i++)
+    for (uint8_t i = 0; i < length; i++)
     {
-        send_byte(text[i]);
-        crc = _crc_ibutton_update(crc, text[i]);
+        send_byte(data[i]);
+        crc = _crc_ibutton_update(crc, data[i]);
     }
 
     // send CRC
@@ -142,7 +184,7 @@ tx_message(char *text, uint8_t len)
     cbi(PORTB, PIN_TX);
 }
 
-/*
+/**
  * Take a temperature measurement and and transmit it to the receiver.
  */
 static void
@@ -157,16 +199,18 @@ send_measurement(void)
     char    msg[MSG_SIZE_DS1820];
 
     /*
-     * Kick off an ADC conversion to check the battery (every N minutes)
+     * Kick off an ADC conversion to check the battery (every 60 messages)
      */
-    if (batt_counter++ > 60)
+    if (batt_counter == 0)
     {
         power_adc_enable();
         sbi(ADCSRA, ADSC);
-
-        batt_counter = 0;
         do_battery_check = 1;
     }
+
+    batt_counter++;
+    if (batt_counter >= BATTERY_CHECK_THRESHOLD)
+        batt_counter = 0;
 
     /*
      * Retrieve the temperature from the sensor
@@ -227,13 +271,15 @@ send_measurement(void)
         msg_counter = 0;
 }
 
-/*
- * Watchdog interrupt handler, called every 8 seconds. Every 8th time this is
- * called (i.e. every 64 seconds) transmit a temperature measurement.
+/**
+ * Watchdog interrupt handler.
+ *
+ * Called every 8 seconds. Every 8th time this is called (i.e. every 64 seconds)
+ * transmit a temperature measurement.
  */
 ISR(WDT_vect)
 {
-    if (++intr_counter == 8)
+    if (++intr_counter == WATCHDOG_INTR_THRESOLD)
     {
         send_measurement();
         intr_counter = 0;
@@ -241,11 +287,6 @@ ISR(WDT_vect)
 
     sbi(WDTCR, WDIE);
 }
-
-/*
- * Save the state of MCUSR (so we know if we had a reset), and disable the
- * watchdog timer. This is called before main().
- */
 static uint8_t mcusr_saved \
     __attribute__ ((section (".noinit")));
 
@@ -254,6 +295,12 @@ watchdog_init(void) \
     __attribute__((naked)) \
     __attribute__((section(".init3")));
 
+
+/**
+ * Save the state of MCUSR (so we know if we had a reset).
+ *
+ * Also disable the watchdog timer. This is called before main().
+ */
 void watchdog_init(void)
 {
     mcusr_saved = MCUSR;

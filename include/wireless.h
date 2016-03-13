@@ -32,12 +32,15 @@
 /*
  * Standard sensor types
  */
+#define WL_SENSOR_TYPE_INVALID          0
 #define WL_SENSOR_TYPE_TEMPERATURE      1
 #define WL_SENSOR_TYPE_PRESSURE         2
 #define WL_SENSOR_TYPE_COUNTER          3
 #define WL_SENSOR_TYPE_LIGHT            4
 #define WL_SENSOR_TYPE_HUMIDITY         5
 #define WL_SENSOR_TYPE_BATTERY          6
+
+#define WL_SENSOR_TYPE_MAX              6
 
 /*
  * Macros to access message components
