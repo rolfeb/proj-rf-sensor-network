@@ -436,7 +436,7 @@ process_message
                 {
                     if ((station_state[station_id] & STATION_FLAG_LOWBATT) == 0)
                     {
-                        syslog(LOG_ERR, "error: low battery warning from station %d (%.1fV) ",
+                        syslog(LOG_ERR, "error: low battery warning from station %d (%.1fV)",
                             station_id, battery / 10.0);
                         station_state[station_id] |= STATION_FLAG_LOWBATT;
                     }
