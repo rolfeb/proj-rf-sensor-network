@@ -151,10 +151,10 @@ ISR(TWI_vect)
                 /*
                  * Sensor reading age
                  */
-                if (now > stations[i].timestamp)
+                if (now >= stations[i].timestamp)
                     v16 = now - stations[i].timestamp;
                 else
-                    v16 = stations[i].timestamp = now;
+                    v16 = 65535 - (stations[i].timestamp - now);
                 *tx_eom++ = ((uint8_t *)&v16)[0];
                 *tx_eom++ = ((uint8_t *)&v16)[1];
             }
